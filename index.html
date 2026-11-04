@@ -10,6 +10,8 @@
   * { margin:0; padding:0; box-sizing:border-box; }
   html, body { height:100%; font-family: 'Inter', -apple-system, Arial, sans-serif; }
   #map { width:100%; height:100vh; }
+
+  /* HUD in basso */
   #hud {
     position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
     background: rgba(255,255,255,0.95); border-radius: 14px; padding: 9px 18px;
@@ -17,7 +19,9 @@
     display: flex; align-items: center; gap: 12px; border: 1px solid #e0e0e0;
     white-space: nowrap; transition: background .3s, border-color .3s, color .3s;
   }
-  #hud.dark { background: rgba(22,28,36,0.96); border-color: #333; color: #e8eaf0; }
+  #hud.dark {
+    background: rgba(22,28,36,0.96); border-color: #333; color: #e8eaf0;
+  }
   #hud .hud-title { color: #0066cc; font-weight: 800; font-size: 15px; }
   #hud.dark .hud-title { color: #5aacff; }
   #hud .hud-active { color: #0f9d58; font-weight: 600; }
@@ -29,6 +33,8 @@
     padding: 5px 12px; cursor: pointer; font-size: 12px; font-weight: 600;
   }
   #hud.dark .hud-btn { background: #2d6db5; }
+
+  /* Popup boat */
   .bv-popup { font-family: 'Inter', Arial, sans-serif; min-width: 200px; }
   .bv-line-badge {
     display:inline-flex; align-items:center; justify-content:center;
@@ -63,6 +69,8 @@
     border-radius:6px; padding:4px 8px; margin-top:8px;
   }
   .bv-ts { font-size:10px; color:#ccc; text-align:right; margin-top:6px; }
+
+  /* Loading overlay */
   #loading {
     position:fixed; inset:0; background:rgba(255,255,255,0.88);
     display:flex; flex-direction:column; align-items:center; justify-content:center;
@@ -80,6 +88,7 @@
 </style>
 </head>
 <body>
+
 <div id="loading"><div class="spinner"></div><span id="loading-msg">Caricamento flotta…</span></div>
 <div id="map"></div>
 <div id="hud">
@@ -89,167 +98,333 @@
   <span class="hud-time"   id="hud-time"></span>
   <button class="hud-btn" onclick="refresh()">↻ Aggiorna</button>
 </div>
+
 <script>
 const API_BASE = "https://bateolivebe.homeserver.foo/api";
 const VENEZIA  = [45.4371, 12.3326];
 const REFRESH_MS = 15000;
+
+// Tile layers
 const TILES = {
-  light: { url:"https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png", attr:"© OpenStreetMap contributors" },
-  dark:  { url:"https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", attr:"© OpenStreetMap contributors © CARTO" },
+  light: {
+    url:   "https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png",
+    attr:  "© <a href='https://www.openstreetmap.org/copyright'>OpenStreetMap</a> contributors",
+  },
+  dark: {
+    url:   "https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png",
+    attr:  "© <a href='https://www.openstreetmap.org/copyright'>OpenStreetMap</a> contributors © <a href='https://stadiamaps.com/'>Stadia Maps</a>",
+  },
 };
+
 const ACTV_COLORS = {
-  "1":{bg:"#ffffff",text:"#000000",border:"#000000"},"2":{bg:"#e3001b",text:"#ffffff",border:"#e3001b"},
-  "2/":{bg:"#e3001b",text:"#ffffff",border:"#e3001b"},"3":{bg:"#ff8c00",text:"#000000",border:"#ff8c00"},
-  "4.1":{bg:"#bd429b",text:"#ffffff",border:"#bd429b"},"4.2":{bg:"#bd429b",text:"#ffffff",border:"#bd429b"},
-  "5.1":{bg:"#60b9a6",text:"#000000",border:"#60b9a6"},"5.2":{bg:"#60b9a6",text:"#000000",border:"#60b9a6"},
-  "6":{bg:"#0070bc",text:"#ffffff",border:"#0070bc"},"7":{bg:"#008b54",text:"#ffffff",border:"#008b54"},
-  "8":{bg:"#6d4c41",text:"#ffffff",border:"#6d4c41"},"9":{bg:"#797b3a",text:"#ffffff",border:"#797b3a"},
-  "10":{bg:"#00c1d5",text:"#000000",border:"#00c1d5"},"11":{bg:"#f49ab4",text:"#000000",border:"#f49ab4"},
-  "12":{bg:"#fced22",text:"#000000",border:"#fced22"},"13":{bg:"#583f99",text:"#ffffff",border:"#583f99"},
-  "14":{bg:"#f36e21",text:"#000000",border:"#f36e21"},"15":{bg:"#fced22",text:"#e3001b",border:"#e3001b"},
-  "17":{bg:"#8a8c8e",text:"#ffffff",border:"#8a8c8e"},"18":{bg:"#fced22",text:"#000000",border:"#e3001b"},
-  "20":{bg:"#cbb3d5",text:"#000000",border:"#cbb3d5"},"22":{bg:"#c4d82d",text:"#006600",border:"#006600"},
-  "N":{bg:"#1c355e",text:"#ffffff",border:"#1c355e"},"NMU":{bg:"#1c355e",text:"#ffffff",border:"#1c355e"},
-  "NLN":{bg:"#1c355e",text:"#ffffff",border:"#1c355e"},"SA":{bg:"#ff7000",text:"#000000",border:"#ff7000"},
+  "1":   {bg:"#ffffff",text:"#000000",border:"#000000"},
+  "2":   {bg:"#e3001b",text:"#ffffff",border:"#e3001b"},
+  "2/":  {bg:"#e3001b",text:"#ffffff",border:"#e3001b"},
+  "3":   {bg:"#ff8c00",text:"#000000",border:"#ff8c00"},
+  "4.1": {bg:"#bd429b",text:"#ffffff",border:"#bd429b"},
+  "4.2": {bg:"#bd429b",text:"#ffffff",border:"#bd429b"},
+  "5.1": {bg:"#60b9a6",text:"#000000",border:"#60b9a6"},
+  "5.2": {bg:"#60b9a6",text:"#000000",border:"#60b9a6"},
+  "6":   {bg:"#0070bc",text:"#ffffff",border:"#0070bc"},
+  "7":   {bg:"#008b54",text:"#ffffff",border:"#008b54"},
+  "8":   {bg:"#6d4c41",text:"#ffffff",border:"#6d4c41"},
+  "9":   {bg:"#797b3a",text:"#ffffff",border:"#797b3a"},
+  "10":  {bg:"#00c1d5",text:"#000000",border:"#00c1d5"},
+  "11":  {bg:"#f49ab4",text:"#000000",border:"#f49ab4"},
+  "12":  {bg:"#fced22",text:"#000000",border:"#fced22"},
+  "13":  {bg:"#583f99",text:"#ffffff",border:"#583f99"},
+  "14":  {bg:"#f36e21",text:"#000000",border:"#f36e21"},
+  "15":  {bg:"#fced22",text:"#e3001b",border:"#e3001b"},
+  "17":  {bg:"#8a8c8e",text:"#ffffff",border:"#8a8c8e"},
+  "18":  {bg:"#fced22",text:"#000000",border:"#e3001b"},
+  "20":  {bg:"#cbb3d5",text:"#000000",border:"#cbb3d5"},
+  "22":  {bg:"#c4d82d",text:"#006600",border:"#006600"},
+  "N":   {bg:"#1c355e",text:"#ffffff",border:"#1c355e"},
+  "NMU": {bg:"#1c355e",text:"#ffffff",border:"#1c355e"},
+  "NLN": {bg:"#1c355e",text:"#ffffff",border:"#1c355e"},
+  "SA":  {bg:"#ff7000",text:"#000000",border:"#ff7000"},
 };
+
 function lineColors(line) {
-  if (!line||line==="-") return {bg:"#000000",text:"#ffffff",border:"#555"};
-  return ACTV_COLORS[line]||{bg:"#888888",text:"#ffffff",border:"#888888"};
+  if (!line || line === "-") return {bg:"#000000",text:"#ffffff",border:"#555"};
+  return ACTV_COLORS[line] || {bg:"#888888",text:"#ffffff",border:"#888888"};
 }
-function haversine(la1,lo1,la2,lo2) {
-  const R=6371000,f1=la1*Math.PI/180,f2=la2*Math.PI/180,
-        df=(la2-la1)*Math.PI/180,dl=(lo2-lo1)*Math.PI/180;
+
+function haversine(la1, lo1, la2, lo2) {
+  const R=6371000, f1=la1*Math.PI/180, f2=la2*Math.PI/180,
+        df=(la2-la1)*Math.PI/180, dl=(lo2-lo1)*Math.PI/180;
   const a=Math.sin(df/2)**2+Math.cos(f1)*Math.cos(f2)*Math.sin(dl/2)**2;
   return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
-function nearestStops(blat,blon,stops,n=5) {
-  return stops.map(s=>{const lat=s.lat||s.stop_lat,lon=s.lon||s.stop_lon;
-    return lat&&lon?{d:haversine(blat,blon,lat,lon),s}:null;})
-    .filter(Boolean).sort((a,b)=>a.d-b.d).slice(0,n);
+
+function nearestStops(blat, blon, stops, n=5) {
+  return stops
+    .map(s => {
+      const lat = s.lat||s.stop_lat, lon = s.lon||s.stop_lon;
+      return lat&&lon ? {d: haversine(blat,blon,lat,lon), s} : null;
+    })
+    .filter(Boolean)
+    .sort((a,b)=>a.d-b.d)
+    .slice(0,n);
 }
-let map,tileLayer,boatLayer,stopLayer,isDark=false,stops=[],refreshTimer=null;
+
+// --- Map setup ---
+let map, tileLayer, boatLayer, stopLayer;
+let isDark = false;
+let stops = [];
+let refreshTimer = null;
+
 function initMap(dark) {
-  isDark=dark;
-  const t=TILES[dark?'dark':'light'];
-  map=L.map('map',{center:VENEZIA,zoom:13,zoomControl:true});
-  tileLayer=L.tileLayer(t.url,{attribution:t.attr,maxZoom:19}).addTo(map);
-  boatLayer=L.layerGroup().addTo(map);
-  stopLayer=L.layerGroup().addTo(map);
+  isDark = dark;
+  const t = TILES[dark ? 'dark' : 'light'];
+  map = L.map('map', { center: VENEZIA, zoom: 13, zoomControl: true });
+  tileLayer = L.tileLayer(t.url, { attribution: t.attr, maxZoom: 19 }).addTo(map);
+  boatLayer = L.layerGroup().addTo(map);
+  stopLayer = L.layerGroup().addTo(map);
 }
+
 function switchTheme(dark) {
   if (!map) return;
-  isDark=dark;
-  document.getElementById('hud').classList.toggle('dark',dark);
-  document.getElementById('loading').classList.toggle('dark',dark);
-  const t=TILES[dark?'dark':'light'];
+  isDark = dark;
+  document.getElementById('hud').classList.toggle('dark', dark);
+  document.getElementById('loading').classList.toggle('dark', dark);
+
+  // Swap tile layer
+  const t = TILES[dark ? 'dark' : 'light'];
   map.removeLayer(tileLayer);
-  tileLayer=L.tileLayer(t.url,{attribution:t.attr,maxZoom:19});
-  tileLayer.addTo(map); tileLayer.bringToBack();
+  tileLayer = L.tileLayer(t.url, { attribution: t.attr, maxZoom: 19 });
+  tileLayer.addTo(map);
+  tileLayer.bringToBack();
 }
+
+// --- Fetch ---
 async function fetchJSON(url) {
-  const r=await fetch(url);
+  const r = await fetch(url);
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   return r.json();
 }
+
 function nowStr() {
-  return new Date().toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  return new Date().toLocaleTimeString('it-IT', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
 }
-async function fetchTrip(tripId,boatId) {
-  try { const r=await fetch(`${API_BASE}/trip/${tripId}/${boatId}`); if(r.ok) return r.json(); } catch {}
+
+async function fetchTrip(tripId, boatId) {
+  try {
+    const r = await fetch(`${API_BASE}/trip/${tripId}/${boatId}`);
+    if (r.ok) return r.json();
+  } catch {}
   return [];
 }
+
 async function refresh() {
   try {
-    const [boats,freshStops]=await Promise.all([
+    const [boats, freshStops] = await Promise.all([
       fetchJSON(`${API_BASE}/vaporetti/live`),
-      stops.length?Promise.resolve(stops):fetchJSON(`${API_BASE}/stops`),
+      stops.length ? Promise.resolve(stops) : fetchJSON(`${API_BASE}/stops`),
     ]);
-    if (freshStops!==stops) stops=freshStops;
-    const tripFetches=boats.filter(b=>b.tripId&&b.tripId!=="-"&&b.id)
-      .map(b=>fetchTrip(b.tripId,b.id).then(t=>[b.id,t]));
-    const trips=Object.fromEntries(await Promise.all(tripFetches));
-    renderBoats(boats,trips); updateHUD(boats); hideLoading();
-  } catch(e) {
-    console.error("BateoLive fetch error:",e);
+    if (freshStops !== stops) stops = freshStops;
+
+    // Fetch trips in parallel
+    const tripFetches = boats
+      .filter(b => b.tripId && b.tripId !== "-" && b.id)
+      .map(b => fetchTrip(b.tripId, b.id).then(t => [b.id, t]));
+    const tripResults = await Promise.all(tripFetches);
+    const trips = Object.fromEntries(tripResults);
+
+    renderBoats(boats, trips);
+    updateHUD(boats);
+    hideLoading();
+  } catch (e) {
+    console.error("BateoLive fetch error:", e);
     setLoadingMsg("Errore di rete – riprovo…");
-    setTimeout(refresh,5000);
+    setTimeout(refresh, 5000);
   }
 }
+
 function hideLoading() {
-  const el=document.getElementById('loading');
+  const el = document.getElementById('loading');
   el.classList.add('hidden');
-  setTimeout(()=>{el.style.display='none';},450);
+  setTimeout(() => { el.style.display='none'; }, 450);
 }
-function setLoadingMsg(msg) { document.getElementById('loading-msg').textContent=msg; }
+
+function setLoadingMsg(msg) {
+  document.getElementById('loading-msg').textContent = msg;
+}
+
 function updateHUD(boats) {
-  const active=boats.filter(b=>b.line&&b.line!=="-").length,idle=boats.length-active;
-  document.getElementById('hud-active').textContent=`🟢 ${active} in servizio`;
-  document.getElementById('hud-idle').textContent=`⚫ ${idle} ferme`;
-  document.getElementById('hud-time').textContent=`· ${nowStr()}`;
+  const active = boats.filter(b => b.line && b.line !== "-").length;
+  const idle   = boats.length - active;
+  document.getElementById('hud-active').textContent = `🟢 ${active} in servizio`;
+  document.getElementById('hud-idle').textContent   = `⚫ ${idle} ferme`;
+  document.getElementById('hud-time').textContent   = `· ${nowStr()}`;
 }
-function renderBoats(boats,trips) {
-  boatLayer.clearLayers(); stopLayer.clearLayers();
-  stops.forEach(s=>{
-    const lat=s.lat||s.stop_lat,lon=s.lon||s.stop_lon,name=s.name||s.stop_name||"";
+
+function renderBoats(boats, trips) {
+  boatLayer.clearLayers();
+  stopLayer.clearLayers();
+
+  // Pontili
+  stops.forEach(s => {
+    const lat = s.lat||s.stop_lat, lon = s.lon||s.stop_lon;
+    const name = s.name||s.stop_name||"";
     if (!lat||!lon) return;
-    const icon=L.divIcon({html:`<div style="width:10px;height:10px;background:white;border:2.5px solid #0066cc;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,0.4);"></div>`,iconSize:[10,10],iconAnchor:[5,5],className:""});
-    L.marker([lat,lon],{icon}).bindTooltip(`🚢 ${name}`,{sticky:true}).addTo(stopLayer);
+    const icon = L.divIcon({
+      html: `<div style="width:10px;height:10px;background:white;border:2.5px solid #0066cc;
+              border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,0.4);"></div>`,
+      iconSize: [10,10], iconAnchor: [5,5], className:""
+    });
+    L.marker([lat,lon], {icon})
+      .bindTooltip(`🚢 ${name}`, {sticky:true})
+      .addTo(stopLayer);
   });
-  const now=nowStr();
-  boats.forEach(boat=>{
-    const {lat,lon}=boat; if (!lat||!lon) return;
-    const line=boat.line||"-",label=boat.label||"?",delay=boat.delay,sim=boat.simulated||false,boatId=boat.id||"";
-    const c=lineColors(line),tripStops=trips[boatId]||[];
-    let delayStr="—",delayClass="",delayIcon="";
-    if (delay!=null) {
-      const am=Math.abs(delay),m=Math.floor(am/60),s=am%60;
-      if (delay>0){delayStr=m?`+${m}m ${s}s`:`+${s}s`;delayClass="bv-delay-warn";delayIcon="⚠️";}
-      else if (delay<0){delayStr=m?`-${m}m ${s}s`:`-${s}s`;delayClass="bv-delay-ok";delayIcon="✓";}
-      else{delayStr="in orario";delayClass="bv-delay-ok";delayIcon="✓";}
+
+  // Vaporetti
+  const now = nowStr();
+  boats.forEach(boat => {
+    const {lat,lon} = boat;
+    if (!lat||!lon) return;
+
+    const line     = boat.line||"-";
+    const label    = boat.label||"?";
+    const delay    = boat.delay;
+    const sim      = boat.simulated||false;
+    const boatId   = boat.id||"";
+    const c        = lineColors(line);
+    const tripStops = trips[boatId]||[];
+
+    // Ritardo
+    let delayStr="—", delayClass="", delayIcon="";
+    if (delay != null) {
+      const am = Math.abs(delay), m = Math.floor(am/60), s = am%60;
+      if (delay > 0) {
+        delayStr = m ? `+${m}m ${s}s` : `+${s}s`;
+        delayClass = "bv-delay-warn"; delayIcon = "⚠️";
+      } else if (delay < 0) {
+        delayStr = m ? `-${m}m ${s}s` : `-${s}s`;
+        delayClass = "bv-delay-ok"; delayIcon = "✓";
+      } else {
+        delayStr = "in orario"; delayClass = "bv-delay-ok"; delayIcon = "✓";
+      }
     }
-    const near=nearestStops(lat,lon,stops,5);
-    let stopsHtml="";
+
+    // Fermate
+    const near = nearestStops(lat, lon, stops, 5);
+    let stopsHtml = "";
     if (tripStops.length) {
-      const future=tripStops.filter(s=>s.status==="FUTURE"),past=tripStops.filter(s=>s.status==="PASSED");
-      stopsHtml='<div class="bv-stops-title">Prossime fermate</div>';
-      [...past.slice(-1),...future.slice(0,4)].forEach(s=>{
-        const isNext=s.status==="FUTURE"&&s===future[0],isPast=s.status==="PASSED";
-        const ts=s.estimatedArrival||s.scheduledArrival;
-        const ora=ts?new Date(ts*1000).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'}):"";
-        const sdel=s.delay;let dTxt="";
-        if (sdel!=null&&Math.abs(sdel)>10){const dm=Math.floor(Math.abs(sdel)/60),ds=Math.abs(sdel)%60;const col=sdel>0?"#d93025":"#0f9d58";dTxt=dm?`<span style="color:${col};font-size:10px"> ${sdel>0?"+":"-"}${dm}m${ds}s</span>`:`<span style="color:${col};font-size:10px"> ${sdel>0?"+":"-"}${ds}s</span>`;}
-        const ico=isNext?"📍":isPast?"✓":"⚓",cls=isNext?"bv-stop-nearest":isPast?"bv-stop-past":"";
-        stopsHtml+=`<div class="bv-stop-row"><span class="bv-stop-name ${cls}">${ico} ${s.stopName||""}</span><span class="bv-stop-dist">${ora}${dTxt}</span></div>`;
+      const future = tripStops.filter(s => s.status==="FUTURE");
+      const past   = tripStops.filter(s => s.status==="PASSED");
+      stopsHtml = '<div class="bv-stops-title">Prossime fermate</div>';
+      const show = [...past.slice(-1), ...future.slice(0,4)];
+      show.forEach(s => {
+        const isNext = s.status==="FUTURE" && s===future[0];
+        const isPast = s.status==="PASSED";
+        const ts = s.estimatedArrival||s.scheduledArrival;
+        const ora = ts ? new Date(ts*1000).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'}) : "";
+        const sdel = s.delay;
+        let dTxt = "";
+        if (sdel != null && Math.abs(sdel)>10) {
+          const dm=Math.floor(Math.abs(sdel)/60), ds=Math.abs(sdel)%60;
+          const col = sdel>0 ? "#d93025" : "#0f9d58";
+          dTxt = dm
+            ? `<span style="color:${col};font-size:10px"> ${sdel>0?"+":"-"}${dm}m${ds}s</span>`
+            : `<span style="color:${col};font-size:10px"> ${sdel>0?"+":"-"}${ds}s</span>`;
+        }
+        const ico = isNext ? "📍" : isPast ? "✓" : "⚓";
+        const cls = isNext ? "bv-stop-nearest" : isPast ? "bv-stop-past" : "";
+        stopsHtml += `<div class="bv-stop-row">
+          <span class="bv-stop-name ${cls}">${ico} ${s.stopName||""}</span>
+          <span class="bv-stop-dist">${ora}${dTxt}</span></div>`;
       });
     } else if (near.length) {
-      stopsHtml='<div class="bv-stops-title">Pontili più vicini</div>';
-      near.forEach(({d,s},i)=>{const name=s.name||s.stop_name||"",dm=d<1000?`${Math.round(d)}m`:`${(d/1000).toFixed(1)}km`,cls=i===0?"bv-stop-nearest":"";
-        stopsHtml+=`<div class="bv-stop-row"><span class="bv-stop-name ${cls}">${i===0?"📍 ":"⚓ "}${name}</span><span class="bv-stop-dist">${dm}</span></div>`;});
+      stopsHtml = '<div class="bv-stops-title">Pontili più vicini</div>';
+      near.forEach(({d,s},i) => {
+        const name = s.name||s.stop_name||"";
+        const dm = d<1000 ? `${Math.round(d)}m` : `${(d/1000).toFixed(1)}km`;
+        const cls = i===0 ? "bv-stop-nearest" : "";
+        stopsHtml += `<div class="bv-stop-row">
+          <span class="bv-stop-name ${cls}">${i===0?"📍 ":"⚓ "}${name}</span>
+          <span class="bv-stop-dist">${dm}</span></div>`;
+      });
     }
-    const header=line&&line!=="-"?`<div class="bv-line-badge" style="background:${c.bg};color:${c.text};border-color:${c.border};">${line}</div>`:`<div class="bv-no-line">Unità senza corsa attiva</div>`;
-    const simHtml=sim?`<div class="bv-sim-note">🔵 Posizione simulata dall'orario</div>`:"";
-    const lineRow=line!=="-"?`<div class="bv-row"><span class="bv-label">Linea</span><span class="bv-val">ACTV ${line}</span></div>`:"";
-    const popupHtml=`<div class="bv-popup">${header}<div class="bv-row"><span class="bv-label">Unità</span><span class="bv-val">#${label}</span></div>${lineRow}<div class="bv-row"><span class="bv-label">Ritardo</span><span class="bv-val ${delayClass}">${delayIcon} ${delayStr}</span></div><div class="bv-row"><span class="bv-label">Posizione</span><span class="bv-val" style="font-size:11px">${lat.toFixed(4)}, ${lon.toFixed(4)}</span></div>${stopsHtml}${simHtml}<div class="bv-ts">${now}</div></div>`;
-    const fs=line.length<=2?"11":"9",outline=sim?"outline:2.5px solid #2f81f7;outline-offset:2px;":"";
-    const iconHtml=`<div style="background:${c.bg};color:${c.text};border:2px solid ${c.border};border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:${fs}px;box-shadow:0 2px 6px rgba(0,0,0,0.4);cursor:pointer;${outline}">${line!=="-"?line:"·"}</div>`;
-    const icon=L.divIcon({html:iconHtml,iconSize:[30,30],iconAnchor:[15,15],className:""});
-    const future2=tripStops.filter(s=>s.status==="FUTURE"),nextStop=future2[0]?.stopName||"";
-    const nearName=near[0]?.s?.name||near[0]?.s?.stop_name||"",nearDist=near[0]?Math.round(near[0].d):0;
-    const tooltip=line!=="-"?`Linea ${line} · Unità #${label}`+(delay!=null?` · ${delayIcon} ${delayStr}`:"")+
-      (nextStop?` · 📍 ${nextStop}`:nearName?` · 📍 ${nearName} (${nearDist}m)`:""):
-      `Unità #${label} · nessuna corsa`+(nearName?` · ${nearName} (${nearDist}m)`:"");
-    L.marker([lat,lon],{icon}).bindPopup(popupHtml,{maxWidth:260}).bindTooltip(tooltip,{sticky:true}).addTo(boatLayer);
+
+    const header = line&&line!=="-"
+      ? `<div class="bv-line-badge" style="background:${c.bg};color:${c.text};border-color:${c.border};">${line}</div>`
+      : `<div class="bv-no-line">Unità senza corsa attiva</div>`;
+
+    const simHtml = sim ? `<div class="bv-sim-note">🔵 Posizione simulata dall'orario</div>` : "";
+
+    const lineRow = line!=="-"
+      ? `<div class="bv-row"><span class="bv-label">Linea</span><span class="bv-val">ACTV ${line}</span></div>` : "";
+
+    const popupHtml = `<div class="bv-popup">
+      ${header}
+      <div class="bv-row"><span class="bv-label">Unità</span><span class="bv-val">#${label}</span></div>
+      ${lineRow}
+      <div class="bv-row"><span class="bv-label">Ritardo</span>
+        <span class="bv-val ${delayClass}">${delayIcon} ${delayStr}</span></div>
+      <div class="bv-row"><span class="bv-label">Posizione</span>
+        <span class="bv-val" style="font-size:11px">${lat.toFixed(4)}, ${lon.toFixed(4)}</span></div>
+      ${stopsHtml}
+      ${simHtml}
+      <div class="bv-ts">${now}</div>
+    </div>`;
+
+    // Icona barca
+    const fs = line.length<=2 ? "11" : "9";
+    const outline = sim ? "outline:2.5px solid #2f81f7;outline-offset:2px;" : "";
+    const iconHtml = `<div style="background:${c.bg};color:${c.text};border:2px solid ${c.border};
+      border-radius:50%;width:30px;height:30px;
+      display:flex;align-items:center;justify-content:center;
+      font-weight:800;font-size:${fs}px;
+      box-shadow:0 2px 6px rgba(0,0,0,0.4);cursor:pointer;${outline}">
+      ${line!=="-"?line:"·"}</div>`;
+
+    const icon = L.divIcon({ html: iconHtml, iconSize:[30,30], iconAnchor:[15,15], className:"" });
+
+    // Tooltip
+    const future2 = tripStops.filter(s=>s.status==="FUTURE");
+    const nextStop = future2[0]?.stopName||"";
+    const nearName = near[0]?.s?.name||near[0]?.s?.stop_name||"";
+    const nearDist = near[0] ? Math.round(near[0].d) : 0;
+    let tooltip = line!=="-"
+      ? `Linea ${line} · Unità #${label}`+(delay!=null?` · ${delayIcon} ${delayStr}`:"")+
+        (nextStop?` · 📍 ${nextStop}`:nearName?` · 📍 ${nearName} (${nearDist}m)`:"")
+      : `Unità #${label} · nessuna corsa`+(nearName?` · ${nearName} (${nearDist}m)`:"");
+
+    L.marker([lat,lon], {icon})
+      .bindPopup(popupHtml, {maxWidth:260})
+      .bindTooltip(tooltip, {sticky:true})
+      .addTo(boatLayer);
   });
 }
-function startAutoRefresh() { if (refreshTimer) clearInterval(refreshTimer); refreshTimer=setInterval(refresh,REFRESH_MS); }
-window.addEventListener('message',e=>{ if(e.data&&e.data.theme){const dark=e.data.theme==='dark';if(dark!==isDark)switchTheme(dark);} });
-function getThemeParam() { return new URLSearchParams(window.location.search).get('theme')==='dark'; }
+
+// --- Auto refresh ---
+function startAutoRefresh() {
+  if (refreshTimer) clearInterval(refreshTimer);
+  refreshTimer = setInterval(refresh, REFRESH_MS);
+}
+
+// --- Theme from parent (postMessage) ---
+window.addEventListener('message', e => {
+  if (e.data && e.data.theme) {
+    const dark = e.data.theme === 'dark';
+    if (dark !== isDark) switchTheme(dark);
+  }
+});
+
+// --- URL param theme ---
+function getThemeParam() {
+  return new URLSearchParams(window.location.search).get('theme') === 'dark';
+}
+
+// --- Boot ---
 (async function boot() {
-  const dark=getThemeParam();
-  document.getElementById('hud').classList.toggle('dark',dark);
-  document.getElementById('loading').classList.toggle('dark',dark);
+  const dark = getThemeParam();
+  document.getElementById('hud').classList.toggle('dark', dark);
+  document.getElementById('loading').classList.toggle('dark', dark);
   initMap(dark);
-  setTimeout(()=>{ if(map) map.invalidateSize(); },300);
+  // Invalidate map size after a short delay (fixes iframe hidden-at-load issue)
+  setTimeout(() => { if (map) map.invalidateSize(); }, 300);
   await refresh();
   startAutoRefresh();
 })();
