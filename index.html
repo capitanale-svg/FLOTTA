@@ -85,6 +85,7 @@
     animation: spin .8s linear infinite;
   }
   @keyframes spin { to { transform:rotate(360deg); } }
+  body.dark-map .leaflet-tile-pane { filter: invert(100%) hue-rotate(180deg) brightness(90%) contrast(85%); }
 </style>
 </head>
 <body>
@@ -111,8 +112,8 @@ const TILES = {
     attr:  "© <a href='https://www.openstreetmap.org/copyright'>OpenStreetMap</a> contributors",
   },
   dark: {
-    url:   "https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png",
-    attr:  "© <a href='https://www.openstreetmap.org/copyright'>OpenStreetMap</a> contributors © <a href='https://stadiamaps.com/'>Stadia Maps</a>",
+    url:   "https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png",
+    attr:  "© <a href='https://www.openstreetmap.org/copyright'>OpenStreetMap</a> contributors",
   },
 };
 
@@ -176,7 +177,8 @@ let refreshTimer = null;
 
 function initMap(dark) {
   isDark = dark;
-  const t = TILES[dark ? 'dark' : 'light'];
+  document.body.classList.toggle('dark-map', dark);
+  const t = TILES['light'];
   map = L.map('map', { center: VENEZIA, zoom: 13, zoomControl: true });
   tileLayer = L.tileLayer(t.url, { attribution: t.attr, maxZoom: 19 }).addTo(map);
   boatLayer = L.layerGroup().addTo(map);
@@ -188,13 +190,7 @@ function switchTheme(dark) {
   isDark = dark;
   document.getElementById('hud').classList.toggle('dark', dark);
   document.getElementById('loading').classList.toggle('dark', dark);
-
-  // Swap tile layer
-  const t = TILES[dark ? 'dark' : 'light'];
-  map.removeLayer(tileLayer);
-  tileLayer = L.tileLayer(t.url, { attribution: t.attr, maxZoom: 19 });
-  tileLayer.addTo(map);
-  tileLayer.bringToBack();
+  document.body.classList.toggle('dark-map', dark);
 }
 
 // --- Fetch ---
