@@ -215,7 +215,7 @@ async function fetchTrip(tripId, boatId) {
 async function refresh() {
   try {
     const [boats, freshStops] = await Promise.all([
-      fetchJSON(`${API_BASE}/vaporetti/live`),
+      fetchJSON(`${API_BASE}/vaporetti/live${window._simMode ? '?sim=1' : ''}`),
       stops.length ? Promise.resolve(stops) : fetchJSON(`${API_BASE}/stops`),
     ]);
     if (freshStops !== stops) stops = freshStops;
@@ -408,14 +408,18 @@ window.addEventListener('message', e => {
   }
 });
 
-// --- URL param theme ---
+// --- URL params ---
 function getThemeParam() {
   return new URLSearchParams(window.location.search).get('theme') === 'dark';
+}
+function getSimParam() {
+  return new URLSearchParams(window.location.search).get('sim') === '1';
 }
 
 // --- Boot ---
 (async function boot() {
   const dark = getThemeParam();
+  if (getSimParam()) window._simMode = true;
   document.getElementById('hud').classList.toggle('dark', dark);
   document.getElementById('loading').classList.toggle('dark', dark);
   initMap(dark);
